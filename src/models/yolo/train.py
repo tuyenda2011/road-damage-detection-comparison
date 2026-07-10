@@ -108,7 +108,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tune YOLO on Road Damage Detection.")
     parser.add_argument("--config", default="configs/yolo.yaml")
     parser.add_argument("--data", default=None)
-    parser.add_argument("--model", default=None, help="Example: yolov8n.pt, yolov8s.pt, yolo11n.pt")
+    parser.add_argument("--model", default=None, help="Example: yolo26n.pt or yolo26s.pt")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--imgsz", type=int, default=None)
     parser.add_argument("--batch", type=int, default=None)
@@ -137,7 +137,7 @@ def main() -> None:
     cfg = load_yaml(args.config)
     best = train_yolo(
         data=args.data or cfg.get("data", "configs/dataset.yaml"),
-        model_name=args.model or cfg.get("model", "yolov8n.pt"),
+        model_name=args.model or cfg.get("model", "yolo26n.pt"),
         epochs=args.epochs if args.epochs is not None else int(cfg.get("epochs", 60)),
         imgsz=args.imgsz if args.imgsz is not None else int(cfg.get("imgsz", 640)),
         batch=args.batch if args.batch is not None else int(cfg.get("batch", 16)),

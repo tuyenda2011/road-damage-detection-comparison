@@ -1,5 +1,5 @@
 data: configs/dataset.yaml
-model: yolov8n.pt
+model: yolo26n.pt
 epochs: 60
 batch: 16
 imgsz: 640

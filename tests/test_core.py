@@ -294,7 +294,7 @@ class RuntimeConfigTests(unittest.TestCase):
 
             final_best = train_yolo(
                 data="configs/dataset.yaml",
-                model_name="yolov8n.pt",
+                model_name="yolo26n.pt",
                 epochs=1,
                 imgsz=64,
                 batch=1,
