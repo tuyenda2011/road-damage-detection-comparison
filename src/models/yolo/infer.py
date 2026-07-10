@@ -110,7 +110,7 @@ def infer_yolo_video(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run YOLO inference on an image or video.")
-    parser.add_argument("--weights", default="runs/yolo/best.pt")
+    parser.add_argument("--weights", default="runs/yolo/checkpoints/best.pt")
     parser.add_argument("--source", required=True)
     parser.add_argument("--output", default="results")
     parser.add_argument("--conf", type=float, default=0.25)

@@ -7,17 +7,27 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import torch
 import yaml
 from PIL import Image
 
 from src.dataset.convert_rdd_to_yolo import convert_voc_to_yolo
+from src.dataset.rebuild_splits import rebuild_splits
 from src.dataset.road_damage_dataset import read_yolo_label
 from src.dataset.split_dataset import label_for_image, relative_output_path, split_dataset
 from src.evaluation.evaluate import evaluate_model, resolve_image_and_label_dirs
 from src.evaluation.metrics import aggregate_precision_recall, calculate_iou, map50
+from src.models.faster_rcnn.train import train_faster_rcnn
 from src.models.yolo.train import train_yolo
 from src.utils.bbox import clip_boxes_xyxy, xyxy_to_yolo, yolo_to_xyxy
-from src.utils.common import resolve_device, write_ultralytics_dataset
+from src.utils.checkpoint import (
+    atomic_torch_save,
+    checksum_path,
+    load_torch_checkpoint,
+    previous_checkpoint_path,
+    verify_checkpoint,
+)
+from src.utils.common import resolve_device, resolve_inference_weights, write_ultralytics_dataset
 
 
 class BoundingBoxTests(unittest.TestCase):
@@ -195,6 +205,42 @@ class DatasetSplitTests(unittest.TestCase):
             self.assertEqual(previous.read_bytes(), b"previous")
 
 
+class BalancedRebuildTests(unittest.TestCase):
+    def test_rebuilds_labeled_splits_and_preserves_challenge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "processed"
+            output = root / "rebuilt"
+            for index in range(60):
+                source_split = "train" if index < 50 else "val"
+                source_name = ("CountryA", "CountryB", "CountryC")[index % 3]
+                filename = f"{source_name}_{index:06d}"
+                image = source / "images" / source_split / f"{filename}.jpg"
+                label = source / "labels" / source_split / f"{filename}.txt"
+                image.parent.mkdir(parents=True, exist_ok=True)
+                label.parent.mkdir(parents=True, exist_ok=True)
+                image.write_bytes(f"image-{index}".encode())
+                label.write_text(f"{index % 4} 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+            for index in range(3):
+                challenge = source / "images" / "test" / f"Blind_{index:06d}.jpg"
+                challenge.parent.mkdir(parents=True, exist_ok=True)
+                challenge.write_bytes(b"blind")
+
+            summary = rebuild_splits(
+                source,
+                output,
+                ratios=(0.8, 0.1, 0.1),
+                seed=42,
+                block_size=5,
+            )
+
+            split_total = sum(summary["splits"][split]["images"] for split in ("train", "val", "test"))
+            self.assertEqual(split_total, 60)
+            self.assertEqual(summary["challenge_images"], 3)
+            self.assertEqual(len(list((output / "images" / "challenge").glob("*.jpg"))), 3)
+            self.assertTrue((output / "split_manifest.csv").is_file())
+
+
 class MetricsTests(unittest.TestCase):
     def test_iou(self) -> None:
         self.assertAlmostEqual(calculate_iou([0, 0, 10, 10], [5, 5, 15, 15]), 25 / 175)
@@ -262,6 +308,121 @@ class RuntimeConfigTests(unittest.TestCase):
             self.assertTrue(train_data.is_file())
             self.assertTrue(train_data.name.endswith(".resolved.yaml"))
             self.assertEqual(final_best.read_bytes(), b"weights")
+            self.assertEqual(final_best, root / "run" / "checkpoints" / "best.pt")
+            self.assertTrue(checksum_path(final_best).is_file())
+            self.assertTrue((final_best.parent / "manifest.json").is_file())
+
+
+class CheckpointSafetyTests(unittest.TestCase):
+    def test_atomic_save_keeps_verified_previous_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoints" / "best.pth"
+            atomic_torch_save({"epoch": 1}, checkpoint)
+            atomic_torch_save({"epoch": 2}, checkpoint)
+
+            self.assertTrue(checksum_path(checkpoint).is_file())
+            previous = previous_checkpoint_path(checkpoint)
+            self.assertTrue(previous.is_file())
+            verify_checkpoint(checkpoint, require_checksum=True)
+            verify_checkpoint(previous, require_checksum=True)
+
+            checkpoint.write_bytes(b"corrupted")
+            payload, loaded_path = load_torch_checkpoint(checkpoint, require_checksum=True)
+            self.assertEqual(payload["epoch"], 1)
+            self.assertEqual(loaded_path, previous)
+
+            atomic_torch_save({"epoch": 3}, checkpoint)
+            previous_payload, _ = load_torch_checkpoint(previous, require_checksum=True)
+            self.assertEqual(previous_payload["epoch"], 1)
+
+    def test_inference_resolver_rolls_back_corrupted_managed_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            model_root = Path(tmp) / "model"
+            checkpoint = model_root / "checkpoints" / "best.pth"
+            atomic_torch_save({"epoch": 1}, checkpoint)
+            atomic_torch_save({"epoch": 2}, checkpoint)
+            checkpoint.write_bytes(b"corrupted")
+
+            resolved = resolve_inference_weights(checkpoint, model_root, ".pth")
+            self.assertEqual(resolved, previous_checkpoint_path(checkpoint))
+
+    @patch("src.models.faster_rcnn.train.validate_map50", return_value=0.5)
+    @patch("src.models.faster_rcnn.train.train_one_epoch", return_value=1.0)
+    @patch("src.models.faster_rcnn.train.build_faster_rcnn")
+    def test_faster_rcnn_resume_restores_last_training_state(
+        self,
+        build_model,
+        _train_epoch,
+        _validate,
+    ) -> None:
+        class TinyDetector(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.backbone = torch.nn.Linear(2, 2)
+                self.head = torch.nn.Linear(2, 1)
+
+        build_model.side_effect = lambda pretrained: TinyDetector()
+
+        def fake_train_epoch(model, _loader, optimizer, *_args) -> float:
+            optimizer.zero_grad(set_to_none=True)
+            for parameter in model.parameters():
+                if parameter.requires_grad:
+                    parameter.grad = torch.zeros_like(parameter)
+            optimizer.step()
+            return 1.0
+
+        _train_epoch.side_effect = fake_train_epoch
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = root / "data"
+            for split in ("train", "val"):
+                (data / "images" / split).mkdir(parents=True)
+                (data / "labels" / split).mkdir(parents=True)
+                (data / "images" / split / "sample.jpg").write_bytes(b"unused")
+                (data / "labels" / split / "sample.txt").write_text("", encoding="utf-8")
+            (data / "split_manifest.csv").write_text("path,split\nsample,train\n", encoding="utf-8")
+            output = root / "run"
+
+            train_faster_rcnn(
+                str(data),
+                epochs=1,
+                batch=1,
+                lr=0.01,
+                device="cpu",
+                output_dir=str(output),
+                num_workers=0,
+            )
+            train_faster_rcnn(
+                str(data),
+                epochs=2,
+                batch=1,
+                lr=0.01,
+                device="cpu",
+                output_dir=str(output),
+                num_workers=0,
+                resume="auto",
+            )
+
+            last = output / "checkpoints" / "last.pth"
+            payload, _ = load_torch_checkpoint(last, require_checksum=True)
+            previous_payload, _ = load_torch_checkpoint(
+                previous_checkpoint_path(last), require_checksum=True
+            )
+            self.assertEqual(payload["epoch"], 2)
+            self.assertEqual(previous_payload["epoch"], 1)
+
+            (data / "split_manifest.csv").write_text("path,split\nsample,test\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Dataset split manifest changed"):
+                train_faster_rcnn(
+                    str(data),
+                    epochs=3,
+                    batch=1,
+                    lr=0.01,
+                    device="cpu",
+                    output_dir=str(output),
+                    num_workers=0,
+                    resume="auto",
+                )
 
 
 class EvaluationPreflightTests(unittest.TestCase):

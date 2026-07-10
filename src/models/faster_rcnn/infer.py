@@ -120,7 +120,7 @@ def infer_faster_rcnn_video(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Faster R-CNN inference on an image or video.")
-    parser.add_argument("--weights", default="runs/faster_rcnn/best.pth")
+    parser.add_argument("--weights", default="runs/faster_rcnn/checkpoints/best.pth")
     parser.add_argument("--source", required=True)
     parser.add_argument("--output", default="results")
     parser.add_argument("--conf", type=float, default=0.25)

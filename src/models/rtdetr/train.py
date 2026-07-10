@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
@@ -19,6 +18,7 @@ from src.utils.common import (
     resolve_ultralytics_device,
     write_ultralytics_dataset,
 )
+from src.utils.checkpoint import UltralyticsCheckpointPublisher, resolve_checkpoint_with_fallback
 
 
 def train_rtdetr(
@@ -34,6 +34,7 @@ def train_rtdetr(
     freeze: int = 10,
     seed: int = 42,
     workers: int = 4,
+    resume: str | None = None,
 ) -> Path:
     data_path = project_path(data)
     if not data_path.exists():
@@ -47,8 +48,32 @@ def train_rtdetr(
             "workers and freeze cannot be negative."
         )
 
-    model = RTDETR(resolve_model_reference(model_name))
-    model.train(
+    checkpoint_dir = ensure_dir(project_path(project) / "checkpoints")
+    resume_path: Path | None = None
+    if resume:
+        requested_resume = checkpoint_dir / "last.pt" if resume.lower() == "auto" else project_path(resume)
+        resume_path = resolve_checkpoint_with_fallback(
+            requested_resume,
+            require_checksum=requested_resume.parent.name == "checkpoints",
+        )
+
+    model = RTDETR(str(resume_path) if resume_path else resolve_model_reference(model_name))
+    publisher = UltralyticsCheckpointPublisher(
+        checkpoint_dir,
+        "rtdetr",
+        metadata={
+            "data": str(data_path.resolve()),
+            "model": model_name,
+            "epochs": epochs,
+            "imgsz": imgsz,
+            "batch": batch,
+            "seed": seed,
+            "resume_from": str(resume_path) if resume_path else None,
+        },
+    )
+    model.add_callback("on_model_save", publisher.publish)
+
+    train_options = dict(
         data=str(dataset_path),
         epochs=epochs,
         imgsz=imgsz,
@@ -61,17 +86,19 @@ def train_rtdetr(
         seed=seed,
         deterministic=True,
         workers=workers,
-        exist_ok=True,
+        exist_ok=resume_path is not None,
     )
+    if resume_path is not None:
+        train_options["resume"] = str(resume_path)
+    model.train(**train_options)
 
-    final_best = ensure_dir(project_path(project)) / "best.pt"
-    trainer_best = Path(getattr(model.trainer, "best", ""))
-    if not trainer_best.is_absolute():
-        trainer_best = project_path(trainer_best)
-    if not trainer_best.is_file():
-        raise FileNotFoundError(f"Ultralytics did not produce a best checkpoint: {trainer_best}")
-    if trainer_best.resolve() != final_best.resolve():
-        shutil.copy2(trainer_best, final_best)
+    publisher.publish(model.trainer, names=("best",), force=True)
+    if not (checkpoint_dir / "last.pt").is_file():
+        publisher.publish(model.trainer, names=("last",), force=True)
+    final_best = checkpoint_dir / "best.pt"
+    if not final_best.is_file():
+        raise FileNotFoundError(f"Ultralytics did not produce a best checkpoint: {model.trainer.best}")
+    publisher.write_manifest()
     return final_best
 
 
@@ -95,6 +122,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument(
+        "--resume",
+        default=None,
+        help="Resume from a checkpoint path, or use 'auto' for runs/rtdetr/checkpoints/last.pt.",
+    )
     return parser.parse_args()
 
 
@@ -106,7 +138,7 @@ def main() -> None:
         model_name=args.model or cfg.get("model", "rtdetr-l.pt"),
         epochs=args.epochs if args.epochs is not None else int(cfg.get("epochs", 50)),
         imgsz=args.imgsz if args.imgsz is not None else int(cfg.get("imgsz", 640)),
-        batch=args.batch if args.batch is not None else int(cfg.get("batch", 8)),
+        batch=args.batch if args.batch is not None else int(cfg.get("batch", 2)),
         lr0=args.lr0 if args.lr0 is not None else float(cfg.get("lr0", 0.0001)),
         device=args.device or cfg.get("device", "auto"),
         project=args.project or cfg.get("project", "runs/rtdetr"),
@@ -114,8 +146,9 @@ def main() -> None:
         freeze=args.freeze if args.freeze is not None else int(cfg.get("freeze", 10)),
         seed=args.seed if args.seed is not None else int(cfg.get("seed", 42)),
         workers=args.workers if args.workers is not None else int(cfg.get("workers", 4)),
+        resume=args.resume,
     )
-    print(f"Best RT-DETR weights copied to: {best}")
+    print(f"Best RT-DETR checkpoint: {best}")
 
 
 if __name__ == "__main__":

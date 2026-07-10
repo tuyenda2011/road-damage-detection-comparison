@@ -69,9 +69,9 @@ CLASS_COLOR_HEX: dict[str, str] = {
 }
 
 WEIGHT_DEFAULTS: dict[str, tuple[str, str]] = {
-    "yolo":        ("runs/yolo/best.pt",         "runs/yolo",         ".pt"),
-    "faster_rcnn": ("runs/faster_rcnn/best.pth", "runs/faster_rcnn",  ".pth"),
-    "rtdetr":      ("runs/rtdetr/best.pt",        "runs/rtdetr",       ".pt"),
+    "yolo":        ("runs/yolo/checkpoints/best.pt",         "runs/yolo",         ".pt"),
+    "faster_rcnn": ("runs/faster_rcnn/checkpoints/best.pth", "runs/faster_rcnn",  ".pth"),
+    "rtdetr":      ("runs/rtdetr/checkpoints/best.pt",        "runs/rtdetr",       ".pt"),
 }
 
 IMAGE_TYPES = ["jpg", "jpeg", "png", "bmp", "webp"]
@@ -805,7 +805,7 @@ def render_comparison_tab() -> None:
             "📭 Chưa có dữ liệu so sánh.\n\n"
             "Chạy lệnh evaluate để tạo `results/metrics.csv`:\n"
             "```bash\n"
-            "python src/evaluation/evaluate.py --model yolo --weights runs/yolo/best.pt "
+            "python src/evaluation/evaluate.py --model yolo --weights runs/yolo/checkpoints/best.pt "
             "--data data/processed/test\n"
             "```"
         )
@@ -1073,9 +1073,9 @@ def render_help_tab() -> None:
         (
             "Bước 1 · Chuẩn bị weight mô hình",
             "Đảm bảo đã train hoặc copy file weight vào đúng vị trí:\n\n"
-            "```\nruns/yolo/best.pt\n"
-            "runs/faster_rcnn/best.pth\n"
-            "runs/rtdetr/best.pt\n```\n\n"
+            "```\nruns/yolo/checkpoints/best.pt\n"
+            "runs/faster_rcnn/checkpoints/best.pth\n"
+            "runs/rtdetr/checkpoints/best.pt\n```\n\n"
             "Hoặc nhập đường dẫn tuỳ chỉnh trong sidebar.",
         ),
         (
@@ -1104,7 +1104,7 @@ def render_help_tab() -> None:
             "- **Tab Biểu Đồ:** biểu đồ bar + radar interactive (cần `plotly`)\n\n"
             "Để cập nhật metrics, chạy:\n"
             "```bash\npython src/evaluation/evaluate.py --model yolo "
-            "--weights runs/yolo/best.pt --data data/processed/test\n```",
+            "--weights runs/yolo/checkpoints/best.pt --data data/processed/test\n```",
         ),
     ]
 

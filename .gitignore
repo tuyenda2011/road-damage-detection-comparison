@@ -19,9 +19,13 @@ kaggle.json
 # Datasets: do not commit downloaded RDD/Kaggle/Figshare data.
 /data/raw/**
 /data/processed/**
+/data/processed_original/**
+/data/processed_rebuilt/**
 /data/samples/**
 !/data/raw/.gitkeep
 !/data/processed/.gitkeep
+!/data/processed/split_manifest.csv
+!/data/processed/split_summary.json
 !/data/samples/.gitkeep
 
 # Never commit images/videos.

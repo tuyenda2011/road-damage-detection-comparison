@@ -11,8 +11,15 @@ import numpy as np
 import torch
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.utils.checkpoint import (
+    CheckpointIntegrityError,
+    previous_checkpoint_path,
+    resolve_checkpoint_with_fallback,
+)
 
 
 def add_project_root_to_path() -> None:
@@ -117,17 +124,49 @@ def resolve_model_reference(model: str | Path) -> str:
 
 
 def resolve_inference_weights(weights: str | Path, model_dir: str | Path, extension: str) -> Path:
-    """Resolve canonical weights, falling back to the newest completed run."""
+    """Resolve a verified checkpoint, including rollback and legacy fallbacks."""
     requested = project_path(weights)
-    if requested.is_file():
-        return requested
-    canonical = project_path(model_dir) / f"best{extension}"
-    if requested.resolve() == canonical.resolve():
-        candidates = [path for path in project_path(model_dir).glob(f"*/weights/best{extension}") if path.is_file()]
-        if candidates:
-            fallback = max(candidates, key=lambda path: path.stat().st_mtime_ns)
-            print(f"Warning: canonical checkpoint is missing; using latest run checkpoint: {fallback}")
-            return fallback
+    model_root = project_path(model_dir)
+    canonical = model_root / "checkpoints" / f"best{extension}"
+    legacy = model_root / f"best{extension}"
+    errors: list[str] = []
+
+    def resolve_candidate(path: Path, require_checksum: bool) -> Path | None:
+        if not path.is_file() and not previous_checkpoint_path(path).is_file():
+            return None
+        try:
+            return resolve_checkpoint_with_fallback(path, require_checksum=require_checksum)
+        except CheckpointIntegrityError as exc:
+            errors.append(str(exc))
+            return None
+
+    # Files in the managed checkpoints directory must carry a checksum. Explicit
+    # external and legacy paths remain loadable for backward compatibility.
+    direct = resolve_candidate(requested, require_checksum=requested.parent.name == "checkpoints")
+    if direct is not None:
+        return direct
+
+    requested_is_default = requested.resolve() in {canonical.resolve(), legacy.resolve()}
+    if requested_is_default:
+        for candidate, require_checksum in ((canonical, True), (legacy, False)):
+            if candidate.resolve() == requested.resolve():
+                continue
+            resolved = resolve_candidate(candidate, require_checksum=require_checksum)
+            if resolved is not None:
+                print(f"Warning: requested checkpoint is unavailable; using fallback: {resolved}")
+                return resolved
+
+        raw_candidates = [
+            path for path in model_root.glob(f"*/weights/best{extension}") if path.is_file()
+        ]
+        for fallback in sorted(raw_candidates, key=lambda path: path.stat().st_mtime_ns, reverse=True):
+            resolved = resolve_candidate(fallback, require_checksum=False)
+            if resolved is not None:
+                print(f"Warning: canonical checkpoint is unavailable; using latest run checkpoint: {resolved}")
+                return resolved
+
+    if errors:
+        raise CheckpointIntegrityError("; ".join(errors))
     raise FileNotFoundError(f"Model checkpoint not found: {requested}")
 
 

@@ -1,0 +1,75 @@
+{
+  "seed": 42,
+  "block_size": 100,
+  "requested_ratios": {
+    "train": 0.8,
+    "val": 0.1,
+    "test": 0.1
+  },
+  "challenge_images": 9035,
+  "splits": {
+    "train": {
+      "images": 30708,
+      "ratio": 0.8,
+      "positive_images": 19009,
+      "groups": 353,
+      "classes": {
+        "D00": 20811,
+        "D10": 9462,
+        "D20": 8493,
+        "D40": 5232
+      },
+      "sources": {
+        "China_MotorBike": 1577,
+        "United_States": 3805,
+        "Japan": 8384,
+        "China_Drone": 2000,
+        "India": 6136,
+        "Norway": 6561,
+        "Czech": 2245
+      }
+    },
+    "val": {
+      "images": 3838,
+      "ratio": 0.09998697407841604,
+      "positive_images": 2375,
+      "groups": 45,
+      "classes": {
+        "D00": 2604,
+        "D10": 1185,
+        "D20": 1062,
+        "D40": 656
+      },
+      "sources": {
+        "China_MotorBike": 200,
+        "United_States": 500,
+        "Japan": 1068,
+        "India": 777,
+        "China_Drone": 200,
+        "Norway": 800,
+        "Czech": 293
+      }
+    },
+    "test": {
+      "images": 3839,
+      "ratio": 0.10001302592158395,
+      "positive_images": 2383,
+      "groups": 45,
+      "classes": {
+        "D00": 2601,
+        "D10": 1183,
+        "D20": 1061,
+        "D40": 656
+      },
+      "sources": {
+        "China_MotorBike": 200,
+        "United_States": 500,
+        "Japan": 1054,
+        "Norway": 800,
+        "India": 793,
+        "China_Drone": 201,
+        "Czech": 291
+      }
+    }
+  }
+}
