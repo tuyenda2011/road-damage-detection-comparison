@@ -1,0 +1,12 @@
+data: configs/dataset.yaml
+model: yolov8n.pt
+epochs: 50
+batch: 16
+imgsz: 640
+lr0: 0.001
+freeze: 10
+device: auto
+project: runs/yolo
+name: train
+seed: 42
+workers: 4

@@ -1,0 +1,12 @@
+data: configs/dataset.yaml
+model: rtdetr-l.pt
+epochs: 50
+batch: 8
+imgsz: 640
+lr0: 0.0001
+freeze: 10
+device: auto
+project: runs/rtdetr
+name: train
+seed: 42
+workers: 4

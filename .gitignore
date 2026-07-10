@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local secrets
+.env
+.env.*
+kaggle.json
+
+# Datasets: do not commit downloaded RDD/Kaggle/Figshare data.
+/data/raw/**
+/data/processed/**
+/data/samples/**
+!/data/raw/.gitkeep
+!/data/processed/.gitkeep
+!/data/samples/.gitkeep
+
+# Never commit images/videos.
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.webp
+*.tif
+*.tiff
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+
+# Training outputs and model weights
+/runs/**
+!/runs/yolo/
+!/runs/yolo/.gitkeep
+!/runs/faster_rcnn/
+!/runs/faster_rcnn/.gitkeep
+!/runs/rtdetr/
+!/runs/rtdetr/.gitkeep
+/weights/**
+!/weights/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Generated evaluation/demo outputs
+/results/**
+!/results/metrics.csv
+!/results/comparison_table.csv
+!/results/figures/
+!/results/figures/.gitkeep
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
